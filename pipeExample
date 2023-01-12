@@ -1,0 +1,78 @@
+pipeline {
+    agent {label "-host"}
+    environment {
+        X_FMONQ_PROJECT_KEY = '93f23cae--4cd3-9001-e07e06262034'
+        C1_VERSION="8.3.21.1484"
+        C1_DB_NAME="zup_s7cargo"
+        C1_DB_USER="Мониторинг"
+        C1_DB_PASSWORD="xI7wu8ga"
+        DISPLAY=":99"
+        VENV="/opt/fmon/.venv"
+    }
+    stages {
+        stage('Тест') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh '''
+                    . ${VENV}/bin/activate
+                    cd /opt/fmon/1c_ft
+                    pytest -k=test_1czup --continue-on-collection-errors --alluredir="${WORKSPACE}"/allure-results --clean-alluredir
+                     
+                    '''
+                }
+            }
+        }
+        stage('Создать проект в заббикс') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                    . "${VENV}"/bin/activate
+                    python ${MAGNUS_CMD} create-zabbix-project allure-results
+                    '''
+                }
+            }
+        }
+        stage('Отправить метрики в заббикс') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                    . "${VENV}"/bin/activate
+                    python ${MAGNUS_CMD} send-metrics allure-results
+                    '''
+                }
+            }
+        }
+        stage('Отправить отчет в СМ') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                    . "${VENV}"/bin/activate
+                    python ${MAGNUS_CMD} send-allure-report allure-results
+                    '''
+                }
+            }
+        }        
+        // stage('Генерация allure отчета') {
+        //     steps {
+        //         allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
+        //     }
+        // }
+    }
+    /*post {
+        failure {
+            script {
+                def job = Jenkins.instance.getItemByFullName(env.JOB_NAME)
+                def last_successful_build = job.getLastSuccessfulBuild()
+                if (last_successful_build) {
+                    def last_successful_build_number = last_successful_build.getNumber()
+                    def current_build_number = job.getLastBuild().getNumber()
+                    if (current_build_number - last_successful_build_number < env.REBUILD_COUNT.toInteger() + 1) {
+                        build job: env.JOB_NAME
+                        println("Запущена новая сборка")
+                    }
+                    
+                }
+            }
+        }
+    }*/
+}
